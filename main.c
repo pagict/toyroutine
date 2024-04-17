@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,16 +19,31 @@ void client_routine(struct toro *t, void *arg) {
   char buf[1024];
   while (1) {
     ssize_t n = co_read(t, fd, buf, sizeof(buf));
-    LOG_DEBUG("read %ld bytes", n);
+    if (n >= 0)
+      buf[n] = '\0';
+    LOG_INFO("%d reads[%lu][%s]", fd, n, buf);
     if (n <= 0) {
       close(fd);
       break;
     }
-    LOG_INFO("%d reads[%lu][%s]", fd, n, buf);
   }
+  toro_destroy(t);
 }
 
-struct tothr *thr;
+#define MAX_THREADS 15
+struct tothr *thrs[MAX_THREADS + 1];
+pthread_t threads[MAX_THREADS];
+int thread_cnt = 0;
+
+void *new_thread_client_entry(void *args) {
+  struct tothr *thr = args;
+  while (tothr_toro_count(thr) > 0) {
+    tothr_sched(thr);
+  }
+  tothr_destroy(thr);
+  return NULL;
+}
+
 void accept_routine(struct toro *t, void *arg) {
   int fd = (int)(uintptr_t)arg;
   LOG_DEBUG("accept_routine [%p][%d]", t, fd);
@@ -40,11 +56,33 @@ void accept_routine(struct toro *t, void *arg) {
 
     if (new_fd < 0)
       continue;
-    LOG_INFO("new connection %d", new_fd);
 
-    struct toro *client_toro = toro_create(thr);
-    toro_queue(client_toro, client_routine, (void *)(uintptr_t)new_fd);
+    struct tothr *thr = thrs[thread_cnt];
+    LOG_INFO("new connection %d, toro_cnt[%d]", new_fd, tothr_toro_count(thr));
+
+    int new_thr = tothr_toro_count(thr) == 2;
+    if (new_thr) {
+      thr = tothr_create();
+      LOG_DEBUG("toro_count 2, thread_cnt[%d]", thread_cnt);
+      thrs[thread_cnt + 1] = thr;
+    }
+
+    struct toro *client_toro =
+        toro_create(thr, client_routine, (void *)(uintptr_t)new_fd);
+    if (new_thr) {
+      pthread_create(&threads[thread_cnt], NULL, new_thread_client_entry, thr);
+      pthread_detach(threads[thread_cnt]);
+      ++thread_cnt;
+    }
   }
+
+  LOG_DEBUG("accept_routine going to die");
+  toro_destroy(t);
+}
+
+void exit_func() {
+  //
+  (void)0;
 }
 
 int main(int argc, char **argv) {
@@ -52,7 +90,7 @@ int main(int argc, char **argv) {
   if (argc > 1) {
     port = atoi(argv[1]);
   }
-
+  atexit(exit_func);
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
     perror("socket");
@@ -79,9 +117,11 @@ int main(int argc, char **argv) {
     perror("listen");
     return 1;
   }
-  thr = tothr_create();
-  struct toro *t = toro_create(thr);
-  toro_queue(t, accept_routine, (void *)(uintptr_t)fd);
+  struct tothr *thr = tothr_create();
+  thrs[0] = thr;
+  struct toro *t = toro_create(thr, accept_routine, (void *)(uintptr_t)fd);
   tothr_sched(thr);
+
+  LOG_INFO("go to sleep");
   sleep(99999);
 }
