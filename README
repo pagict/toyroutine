@@ -1,0 +1,11 @@
+toyroutine
+==============
+This is my toy coroutine library. `main.c` is the example, other files are the 
+library implementation.
+
+With `make all`, two executables will be generated:
+`monolithic_server` demonstrates a single-threaded server, using this library to
+handle multiple connections concurrently. Each connection runs as an infinite
+loop, echoing received data to the stderr.
+`client_threads_server` is just a multi-thread version. Thread pool is used to
+handle connections.

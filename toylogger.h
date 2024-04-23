@@ -3,13 +3,16 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>
+
 #define TRACE 0
 #define DEBUG 1
 #define INFO 2
 #define WARN 3
 #define ERROR 4
 #define FATAL 5
-static int log_level = INFO;
+static int log_level = DEBUG;
+
 #define DO_LOG(level, short, fmt, ...)                                         \
   do {                                                                         \
     if (log_level <= level) {                                                  \
@@ -25,11 +28,19 @@ static int log_level = INFO;
     }                                                                          \
   } while (0)
 
+#ifdef NO_LOG
+#define LOG_TRACE(fmt, ...) ((void)0)
+#define LOG_DEBUG(fmt, ...) ((void)0)
+#define LOG_INFO(fmt, ...) ((void)0)
+#define LOG_WARN(fmt, ...) ((void)0)
+#define LOG_ERROR(fmt, ...) ((void)0)
+#define LOG_FATAL(fmt, ...) ((void)0)
+#else
 #define LOG_TRACE(fmt, ...) DO_LOG(0, "T", fmt, ##__VA_ARGS__)
 #define LOG_DEBUG(fmt, ...) DO_LOG(1, "D", fmt, ##__VA_ARGS__)
 #define LOG_INFO(fmt, ...) DO_LOG(2, "I", fmt, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...) DO_LOG(3, "W", fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) DO_LOG(4, "E", fmt, ##__VA_ARGS__)
 #define LOG_FATAL(fmt, ...) DO_LOG(5, "F", fmt, ##__VA_ARGS__)
-
+#endif
 #endif
